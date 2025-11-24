@@ -180,9 +180,29 @@ export function createFontFamily(name: string): string {
   return name.replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Creates CSS @font-face rule for a custom font.
+ *
+ * CRITICAL: This function properly groups font variants (Regular, Italic, Bold, Bold Italic)
+ * under a single font-family name by using font.family instead of font.name.
+ *
+ * How CSS font matching works:
+ * - Multiple @font-face rules can share the same font-family name
+ * - Each rule specifies different font-style and font-weight values
+ * - Browser automatically selects the correct variant based on CSS properties
+ *
+ * Example:
+ *   Font files: "Roboto Regular.ttf", "Roboto Italic.ttf", "Roboto Bold.ttf"
+ *   All map to: font-family: "Roboto"
+ *   CSS: font-family: Roboto; font-weight: 700; → loads "Roboto Bold.ttf"
+ *
+ * Variable fonts are handled differently - they omit font-style and font-weight
+ * declarations to allow full control over variation axes (wght, wdth, slnt, etc.)
+ */
 export function createFontCSS(font: CustomFont): string {
   const format = getFontFormat(font.path);
   const cssFormat = getCSSFormatString(format);
+  // Use font.family to group variants, not font.name
   const fontFamily = createFontFamily(font.family || font.name);
   const fontStyle = font.style || 'normal';
   const fontWeight = font.weight || 400;
@@ -191,6 +211,8 @@ export function createFontCSS(font: CustomFont): string {
     throw new Error(`Blob URL not available for font: ${font.name}`);
   }
 
+  // Variable fonts: omit style/weight for full axis control
+  // Static fonts: specify style/weight for proper variant matching
   const css = `
     @font-face {
       font-family: "${fontFamily}";

@@ -167,7 +167,22 @@ export const useCustomFontStore = create<FontStoreState>((set, get) => ({
       const updatedFont = get().getFont(fontId)!;
       return updatedFont;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Provide user-friendly error messages for common issues
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        if (error.message.includes('not found') || error.message.includes('ENOENT')) {
+          errorMessage = 'Font file not found. It may have been moved or deleted.';
+        } else if (error.message.includes('permission') || error.message.includes('EACCES')) {
+          errorMessage = 'Permission denied. Cannot access font file.';
+        } else if (error.message.includes('format') || error.message.includes('invalid')) {
+          errorMessage = 'Invalid font format. Please use TTF, OTF, WOFF, or WOFF2.';
+        } else if (error.message.includes('corrupt')) {
+          errorMessage = 'Font file is corrupted or incomplete.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
       get().updateFont(fontId, {
         loaded: false,
         error: errorMessage,

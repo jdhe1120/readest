@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import React, { useState } from 'react';
-import { MdAdd, MdDelete } from 'react-icons/md';
+import { MdAdd, MdDelete, MdError, MdWarning } from 'react-icons/md';
 import { IoMdCloseCircleOutline } from 'react-icons/io';
 import { useEnv } from '@/context/EnvContext';
 import { useReaderStore } from '@/store/readerStore';
@@ -19,6 +19,9 @@ interface CustomFontsProps {
 type FontFamily = {
   name: string;
   fonts: CustomFont[];
+  hasError?: boolean;
+  errorCount?: number;
+  loadedCount?: number;
 };
 
 const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
@@ -36,6 +39,8 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
   const { getViewSettings } = useReaderStore();
   const viewSettings = getViewSettings(bookKey) || settings.globalViewSettings;
   const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<string>('');
 
   const { selectFiles } = useFileSelector(appService, _);
 
@@ -48,24 +53,68 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
   const handleImportFont = () => {
     selectFiles({ type: 'fonts', multiple: true }).then(async (result) => {
       if (result.error || result.files.length === 0) return;
-      for (const selectedFile of result.files) {
-        const fontInfo = await appService?.importFont(selectedFile.path || selectedFile.file);
-        if (!fontInfo) continue;
 
-        const customFont = addFont(fontInfo.path, {
-          name: fontInfo.name,
-          family: fontInfo.family,
-          style: fontInfo.style,
-          weight: fontInfo.weight,
-          variable: fontInfo.variable,
-        });
-        console.log('Added custom font:', customFont);
-        if (customFont && !customFont.error) {
-          const loadedFont = await loadFont(envConfig, customFont.id);
-          mountCustomFont(document, loadedFont);
+      setIsImporting(true);
+      let successCount = 0;
+      let errorCount = 0;
+
+      try {
+        for (let i = 0; i < result.files.length; i++) {
+          const selectedFile = result.files[i];
+          setImportStatus(`Importing ${i + 1}/${result.files.length}...`);
+
+          try {
+            const fontInfo = await appService?.importFont(selectedFile.path || selectedFile.file);
+            if (!fontInfo) {
+              errorCount++;
+              continue;
+            }
+
+            const customFont = addFont(fontInfo.path, {
+              name: fontInfo.name,
+              family: fontInfo.family,
+              style: fontInfo.style,
+              weight: fontInfo.weight,
+              variable: fontInfo.variable,
+            });
+
+            console.log('Added custom font:', customFont);
+
+            if (customFont && !customFont.error) {
+              try {
+                const loadedFont = await loadFont(envConfig, customFont.id);
+                mountCustomFont(document, loadedFont);
+                successCount++;
+              } catch (loadError) {
+                console.error('Failed to load font:', loadError);
+                errorCount++;
+              }
+            } else {
+              errorCount++;
+            }
+          } catch (importError) {
+            console.error('Failed to import font:', importError);
+            errorCount++;
+          }
         }
+
+        saveCustomFonts(envConfig);
+
+        // Show summary
+        if (successCount > 0 && errorCount === 0) {
+          setImportStatus(`Successfully imported ${successCount} font${successCount > 1 ? 's' : ''}`);
+        } else if (successCount > 0 && errorCount > 0) {
+          setImportStatus(`Imported ${successCount}, failed ${errorCount}`);
+        } else if (errorCount > 0) {
+          setImportStatus(`Failed to import ${errorCount} font${errorCount > 1 ? 's' : ''}`);
+        }
+
+        setTimeout(() => {
+          setImportStatus('');
+        }, 3000);
+      } finally {
+        setIsImporting(false);
       }
-      saveCustomFonts(envConfig);
     });
   };
 
@@ -106,10 +155,47 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
       familyMap.get(family)!.push(font.id);
     }
 
-    return Array.from(familyMap.entries()).map(([family, ids]) => ({
-      name: family,
-      fonts: ids.map((id) => fonts.find((f) => f.id === id)!).filter((f): f is CustomFont => !!f),
-    }));
+    return Array.from(familyMap.entries()).map(([family, ids]) => {
+      const familyFonts = ids.map((id) => fonts.find((f) => f.id === id)!).filter((f): f is CustomFont => !!f);
+      const errorCount = familyFonts.filter((f) => f.error).length;
+      const loadedCount = familyFonts.filter((f) => f.loaded && !f.error).length;
+      return {
+        name: family,
+        fonts: familyFonts,
+        hasError: errorCount > 0,
+        errorCount,
+        loadedCount,
+      };
+    });
+  };
+
+  const getFontVariantLabel = (font: CustomFont): string => {
+    const parts: string[] = [];
+
+    if (font.weight && font.weight !== 400) {
+      const weightNames: Record<number, string> = {
+        100: 'Thin',
+        200: 'ExtraLight',
+        300: 'Light',
+        400: 'Regular',
+        500: 'Medium',
+        600: 'SemiBold',
+        700: 'Bold',
+        800: 'ExtraBold',
+        900: 'Black',
+      };
+      parts.push(weightNames[font.weight] || `${font.weight}`);
+    }
+
+    if (font.style && font.style !== 'normal') {
+      parts.push(font.style === 'italic' ? 'Italic' : 'Oblique');
+    }
+
+    if (parts.length === 0) {
+      return 'Regular';
+    }
+
+    return parts.join(' ');
   };
 
   const availableFonts = customFonts
@@ -131,7 +217,7 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
             <li className='font-medium'>{_('Custom Fonts')}</li>
           </ul>
         </div>
-        {availableFonts.length > 0 && (
+        {availableFonts.length > 0 && !isImporting && (
           <button
             onClick={toggleDeleteMode}
             className={`btn btn-ghost btn-sm text-base-content gap-2`}
@@ -149,18 +235,29 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
         )}
       </div>
 
+      {importStatus && (
+        <div className='alert mb-4 py-2 text-sm'>
+          <span>{importStatus}</span>
+        </div>
+      )}
+
       <div className='grid grid-cols-2 gap-4'>
         <div className='card border-primary/50 hover:border-primary/75 group h-12 border-2 transition-colors'>
           <button
             className='card-body flex cursor-pointer items-center justify-center p-2 text-center'
             onClick={handleImportFont}
+            disabled={isImporting}
           >
             <div className='flex items-center gap-2'>
               <div className='flex items-center justify-center'>
-                <MdAdd className='text-primary/85 group-hover:text-primary h-6 w-6' />
+                {isImporting ? (
+                  <span className='loading loading-spinner loading-sm text-primary'></span>
+                ) : (
+                  <MdAdd className='text-primary/85 group-hover:text-primary h-6 w-6' />
+                )}
               </div>
               <div className='text-primary/85 group-hover:text-primary line-clamp-1 font-medium'>
-                {_('Import Font')}
+                {isImporting ? _('Importing...') : _('Import Font')}
               </div>
             </div>
           </button>
@@ -171,24 +268,59 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
             role='none'
             key={family.name}
             className={clsx(
-              'card h-12 border shadow-sm',
+              'card border shadow-sm transition-all',
+              'min-h-20',
               currentFontFamily === family.name
                 ? 'border-primary/50 bg-primary/50'
-                : `border-base-200 bg-base-200 ${isDeleteMode ? '' : 'cursor-pointer'}`,
+                : `border-base-200 bg-base-200 ${isDeleteMode ? '' : 'cursor-pointer hover:border-primary/30'}`,
             )}
             onClick={!isDeleteMode ? () => handleSelectFamily(family) : undefined}
-            title={family.fonts.map((f) => f.name).join('\n')}
+            title={family.fonts.map((f) => `${f.name}${f.error ? ` (Error: ${f.error})` : ''}`).join('\n')}
           >
-            <div className='card-body flex items-center justify-center p-2'>
-              <div
-                style={{
-                  fontFamily: `"${family.name}", sans-serif`,
-                  fontWeight: 400,
-                }}
-                className='text-base-content line-clamp-1 break-all'
-              >
-                {family.name}
+            <div className='card-body flex flex-col items-start justify-center gap-1 p-2'>
+              <div className='flex w-full items-center justify-between gap-1'>
+                <div className='text-base-content line-clamp-1 flex-1 break-all text-xs font-medium'>
+                  {family.name}
+                </div>
+                {family.hasError && !isDeleteMode && (
+                  <MdError className='text-error h-4 w-4 flex-shrink-0' title={_('Font loading error')} />
+                )}
               </div>
+
+              {/* Font Preview Text */}
+              {!family.hasError && family.loadedCount && family.loadedCount > 0 && (
+                <div
+                  style={{
+                    fontFamily: `"${family.name}", sans-serif`,
+                    fontWeight: 400,
+                  }}
+                  className='text-base-content/85 line-clamp-1 w-full break-all text-base'
+                >
+                  The quick brown fox
+                </div>
+              )}
+
+              {/* Font Variants */}
+              {family.fonts.length > 1 && !isDeleteMode && (
+                <div className='text-base-content/60 flex flex-wrap gap-1 text-xs'>
+                  {family.fonts.slice(0, 4).map((font) => (
+                    <span
+                      key={font.id}
+                      className={clsx(
+                        'rounded px-1',
+                        font.error ? 'bg-error/20 text-error' : 'bg-base-300',
+                      )}
+                      title={font.error || undefined}
+                    >
+                      {getFontVariantLabel(font)}
+                    </span>
+                  ))}
+                  {family.fonts.length > 4 && (
+                    <span className='text-base-content/50'>+{family.fonts.length - 4}</span>
+                  )}
+                </div>
+              )}
+
               {isDeleteMode && (
                 <button
                   onClick={() => handleDeleteFamily(family)}
@@ -208,7 +340,15 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
           <div className='mb-1 indent-2 font-medium'>{_('Tips')}:</div>
           <ul className='list-outside list-disc space-y-1 ps-2'>
             <li>{_('Supported font formats: .ttf, .otf, .woff, .woff2')}</li>
+            <li>{_('Import multiple font variants (Regular, Italic, Bold, Bold Italic) for best results')}</li>
+            <li>{_('Font variants with the same family name are grouped automatically')}</li>
             <li>{_('Custom fonts can be selected from the Font Face menu')}</li>
+            {availableFamilies.some(f => f.hasError) && (
+              <li className='text-error flex items-center gap-1'>
+                <MdWarning className='h-3 w-3 flex-shrink-0' />
+                <span>{_('Some fonts failed to load. Check the error icons for details.')}</span>
+              </li>
+            )}
           </ul>
         </div>
       </div>
