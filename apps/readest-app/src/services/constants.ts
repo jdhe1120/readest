@@ -118,7 +118,7 @@ export const DEFAULT_BOOK_FONT: BookFont = {
   monospaceFont: 'Consolas',
   defaultFont: 'Serif',
   defaultCJKFont: 'LXGW WenKai GB Screen',
-  defaultFontSize: 16,
+  defaultFontSize: 17,
   minimumFontSize: 8,
   fontWeight: 400,
 };
