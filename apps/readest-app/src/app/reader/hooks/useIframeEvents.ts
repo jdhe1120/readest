@@ -3,6 +3,9 @@ import { useReaderStore } from '@/store/readerStore';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { debounce } from '@/utils/debounce';
 import { ScrollSource } from './usePagination';
+import { saveViewSettings } from '@/helpers/settings';
+import { useEnv } from '@/context/EnvContext';
+import { MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '@/services/constants';
 
 export const useMouseEvent = (
   bookKey: string,
@@ -58,29 +61,112 @@ interface IframeTouchEvent {
   targetTouches: IframeTouch[];
 }
 
+interface PinchState {
+  initialDistance: number;
+  initialZoomLevel: number;
+  isPinching: boolean;
+}
+
 export const useTouchEvent = (
   bookKey: string,
   handlePageFlip: (msg: CustomEvent) => void,
   handleContinuousScroll: (source: ScrollSource, delta: number, threshold: number) => void,
 ) => {
+  const { envConfig } = useEnv();
   const { getBookData } = useBookDataStore();
-  const { hoveredBookKey, setHoveredBookKey, getViewSettings } = useReaderStore();
+  const { hoveredBookKey, setHoveredBookKey, getViewSettings, getView, setViewSettings } = useReaderStore();
 
   const touchStartRef = useRef<IframeTouch | null>(null);
   const touchEndRef = useRef<IframeTouch | null>(null);
   const touchStartTimeRef = useRef<number | null>(null);
   const touchEndTimeRef = useRef<number | null>(null);
+  const pinchStateRef = useRef<PinchState | null>(null);
+
+  // Helper function to calculate distance between two touch points
+  const getTouchDistance = (touch1: IframeTouch, touch2: IframeTouch): number => {
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
 
   const onTouchStart = (e: IframeTouchEvent | React.TouchEvent<HTMLDivElement>) => {
-    const touch = e.targetTouches[0];
-    if (!touch) return;
-    touchStartRef.current = touch;
+    const touches = e.targetTouches;
+    if (!touches || touches.length === 0) return;
+
+    // Store first touch for single-touch gestures
+    touchStartRef.current = touches[0];
     touchStartTimeRef.current = 'timeStamp' in e ? e.timeStamp : Date.now();
+
+    // Check for pinch gesture (two fingers)
+    if (touches.length === 2) {
+      const bookData = getBookData(bookKey);
+      const viewSettings = getViewSettings(bookKey);
+
+      // Only enable pinch-to-zoom for fixed layout (PDF/CBZ)
+      if (bookData?.isFixedLayout && viewSettings) {
+        const distance = getTouchDistance(touches[0], touches[1]);
+        pinchStateRef.current = {
+          initialDistance: distance,
+          initialZoomLevel: viewSettings.zoomLevel,
+          isPinching: true,
+        };
+      }
+    } else {
+      // Reset pinch state if not two fingers
+      pinchStateRef.current = null;
+    }
   };
 
   const onTouchMove = (e: IframeTouchEvent | React.TouchEvent<HTMLDivElement>) => {
     if (!touchStartRef.current) return;
-    const touch = e.targetTouches[0];
+
+    const touches = e.targetTouches;
+
+    // Handle pinch-to-zoom for two-finger gestures
+    if (touches && touches.length === 2 && pinchStateRef.current?.isPinching) {
+      const bookData = getBookData(bookKey);
+      const viewSettings = getViewSettings(bookKey);
+
+      if (bookData?.isFixedLayout && viewSettings) {
+        const currentDistance = getTouchDistance(touches[0], touches[1]);
+        const { initialDistance, initialZoomLevel } = pinchStateRef.current;
+
+        // Calculate zoom scale based on pinch distance change
+        const scale = currentDistance / initialDistance;
+        let newZoomLevel = Math.round(initialZoomLevel * scale);
+
+        // Clamp zoom level to min/max bounds
+        newZoomLevel = Math.max(MIN_ZOOM_LEVEL, Math.min(MAX_ZOOM_LEVEL, newZoomLevel));
+
+        // Apply zoom immediately for smooth feedback
+        if (newZoomLevel !== viewSettings.zoomLevel) {
+          viewSettings.zoomLevel = newZoomLevel;
+          viewSettings.zoomMode = 'custom';
+          setViewSettings(bookKey, viewSettings);
+          getView(bookKey)?.renderer.setAttribute('scale-factor', newZoomLevel);
+          getView(bookKey)?.renderer.setAttribute('zoom', 'custom');
+        }
+      }
+      return; // Don't process single-touch gestures during pinch
+    }
+
+    // If we were pinching but now only have 1 finger, end the pinch gesture
+    if (pinchStateRef.current?.isPinching && touches && touches.length === 1) {
+      const viewSettings = getViewSettings(bookKey);
+      const bookData = getBookData(bookKey);
+
+      if (viewSettings && bookData?.isFixedLayout) {
+        // Persist zoom level changes
+        saveViewSettings(envConfig, bookKey, 'zoomLevel', viewSettings.zoomLevel, true, true);
+        saveViewSettings(envConfig, bookKey, 'zoomMode', 'custom', true, false);
+      }
+
+      // Reset pinch state
+      pinchStateRef.current = null;
+    }
+
+    // Handle single-touch gestures
+    const touch = touches?.[0];
     if (touch) {
       touchEndRef.current = touch;
       touchEndTimeRef.current = 'timeStamp' in e ? e.timeStamp : Date.now();
@@ -103,6 +189,26 @@ export const useTouchEvent = (
 
   const onTouchEnd = (e: IframeTouchEvent | React.TouchEvent<HTMLDivElement>) => {
     if (!touchStartRef.current) return;
+
+    // If we were pinching, save the zoom level and reset pinch state
+    if (pinchStateRef.current?.isPinching) {
+      const viewSettings = getViewSettings(bookKey);
+      const bookData = getBookData(bookKey);
+
+      if (viewSettings && bookData?.isFixedLayout) {
+        // Persist zoom level changes
+        saveViewSettings(envConfig, bookKey, 'zoomLevel', viewSettings.zoomLevel, true, true);
+        saveViewSettings(envConfig, bookKey, 'zoomMode', 'custom', true, false);
+      }
+
+      // Reset pinch state
+      pinchStateRef.current = null;
+
+      // Don't process as a swipe if we were pinching
+      touchStartRef.current = null;
+      touchEndRef.current = null;
+      return;
+    }
 
     const touch = e.targetTouches[0];
     if (touch) {
