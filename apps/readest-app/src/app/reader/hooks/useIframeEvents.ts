@@ -70,6 +70,8 @@ export const useTouchEvent = (
   const touchEndRef = useRef<IframeTouch | null>(null);
   const touchStartTimeRef = useRef<number | null>(null);
   const touchEndTimeRef = useRef<number | null>(null);
+  const isScrollingRef = useRef<boolean>(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onTouchStart = (e: IframeTouchEvent | React.TouchEvent<HTMLDivElement>) => {
     const touch = e.targetTouches[0];
@@ -87,6 +89,31 @@ export const useTouchEvent = (
     }
     const { current: touchStart } = touchStartRef;
     const { current: touchEnd } = touchEndRef;
+
+    // Mark as scrolling when user moves their finger
+    if (touchEnd) {
+      const viewSettings = getViewSettings(bookKey);
+      const scrollThreshold = viewSettings?.gestureScrollThreshold ?? 5;
+      const scrollTimeout = viewSettings?.gestureScrollTimeout ?? 150;
+
+      const deltaY = Math.abs(touchEnd.screenY - touchStart.screenY);
+      const deltaX = Math.abs(touchEnd.screenX - touchStart.screenX);
+      // Consider it scrolling if movement exceeds threshold
+      if (deltaY > scrollThreshold || deltaX > scrollThreshold) {
+        isScrollingRef.current = true;
+
+        // Clear any existing timeout
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+
+        // Reset scrolling state after movement stops
+        scrollTimeoutRef.current = setTimeout(() => {
+          isScrollingRef.current = false;
+        }, scrollTimeout);
+      }
+    }
+
     if (hoveredBookKey && touchEnd) {
       const viewSettings = getViewSettings(bookKey)!;
       const deltaY = touchEnd.screenY - touchStart.screenY;
@@ -121,11 +148,16 @@ export const useTouchEvent = (
       const deltaY = touchEnd.screenY - touchStart.screenY;
       const deltaX = touchEnd.screenX - touchStart.screenX;
       const deltaT = touchEndTime && touchStartTime ? touchEndTime - touchStartTime : 0;
+
+      // Check if user was actively scrolling
+      const wasScrolling = isScrollingRef.current;
+
       // also check for deltaX to prevent swipe page turn from triggering the toggle
       if (
         deltaY < -10 &&
         Math.abs(deltaY) > Math.abs(deltaX) * 2 &&
-        Math.abs(deltaX) < windowWidth * 0.3
+        Math.abs(deltaX) < windowWidth * 0.3 &&
+        !wasScrolling // Don't toggle menu if user was scrolling
       ) {
         // swipe up to toggle the header bar and the footer bar, only for horizontal page mode
         if (
@@ -136,23 +168,27 @@ export const useTouchEvent = (
           setHoveredBookKey(hoveredBookKey ? null : bookKey);
         }
       } else {
-        if (hoveredBookKey) {
+        if (hoveredBookKey && !wasScrolling) {
           setHoveredBookKey(null);
         }
       }
-      handlePageFlip(
-        new CustomEvent('touch-swipe', {
-          detail: {
-            deltaX,
-            deltaY,
-            deltaT,
-            startX: touchStart.screenX,
-            startY: touchStart.screenY,
-            endX: touchEnd.screenX,
-            endY: touchEnd.screenY,
-          },
-        }),
-      );
+
+      // Don't handle page flip if user was scrolling
+      if (!wasScrolling) {
+        handlePageFlip(
+          new CustomEvent('touch-swipe', {
+            detail: {
+              deltaX,
+              deltaY,
+              deltaT,
+              startX: touchStart.screenX,
+              startY: touchStart.screenY,
+              endX: touchEnd.screenX,
+              endY: touchEnd.screenY,
+            },
+          }),
+        );
+      }
       handleContinuousScroll('touch', deltaY, 30);
     }
 

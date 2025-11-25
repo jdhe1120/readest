@@ -113,6 +113,9 @@ export interface BookLayout {
   rtl: boolean;
   scrollingOverlap: number;
   allowScript: boolean;
+  gestureScrollThreshold: number; // Minimum movement in pixels to consider as scrolling (default: 5)
+  gestureScrollTimeout: number; // Time in ms to reset scroll state after movement stops (default: 150)
+  clickDebounceMs: number; // Time in ms to debounce clicks after scrolling (default: 300)
 }
 
 export interface BookStyle {
