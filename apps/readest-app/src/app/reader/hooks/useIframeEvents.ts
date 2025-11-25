@@ -150,6 +150,21 @@ export const useTouchEvent = (
       return; // Don't process single-touch gestures during pinch
     }
 
+    // If we were pinching but now only have 1 finger, end the pinch gesture
+    if (pinchStateRef.current?.isPinching && touches && touches.length === 1) {
+      const viewSettings = getViewSettings(bookKey);
+      const bookData = getBookData(bookKey);
+
+      if (viewSettings && bookData?.isFixedLayout) {
+        // Persist zoom level changes
+        saveViewSettings(envConfig, bookKey, 'zoomLevel', viewSettings.zoomLevel, true, true);
+        saveViewSettings(envConfig, bookKey, 'zoomMode', 'custom', true, false);
+      }
+
+      // Reset pinch state
+      pinchStateRef.current = null;
+    }
+
     // Handle single-touch gestures
     const touch = touches?.[0];
     if (touch) {
