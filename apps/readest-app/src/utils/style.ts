@@ -28,6 +28,9 @@ const getFontStyles = (
   overrideFont: boolean,
 ) => {
   const lastSerifFonts = ['Georgia', 'Times New Roman'];
+
+  // Build comprehensive font stacks with proper fallbacks
+  // Priority: User selected > CJK fonts > Default fonts > System fonts > Generic fallback
   const serifFonts = [
     serif,
     ...(defaultCJKFont !== serif ? [defaultCJKFont] : []),
@@ -39,15 +42,20 @@ const getFontStyles = (
       (font) => SERIF_FONTS.includes(font) && !lastSerifFonts.includes(defaultCJKFont),
     ),
     ...FALLBACK_FONTS,
-  ];
+  ].filter((font, index, self) => self.indexOf(font) === index); // Remove duplicates
+
   const sansSerifFonts = [
     sansSerif,
     ...(defaultCJKFont !== sansSerif ? [defaultCJKFont] : []),
     ...SANS_SERIF_FONTS.filter((font) => font !== sansSerif && font !== defaultCJKFont),
     ...CJK_SANS_SERIF_FONTS.filter((font) => font !== sansSerif && font !== defaultCJKFont),
     ...FALLBACK_FONTS,
-  ];
-  const monospaceFonts = [monospace, ...MONOSPACE_FONTS.filter((font) => font !== monospace)];
+  ].filter((font, index, self) => self.indexOf(font) === index); // Remove duplicates
+
+  const monospaceFonts = [
+    monospace,
+    ...MONOSPACE_FONTS.filter((font) => font !== monospace),
+  ].filter((font, index, self) => self.indexOf(font) === index); // Remove duplicates
   const defaultFontFamily = defaultFont.toLowerCase() === 'serif' ? '--serif' : '--sans-serif';
   const fontStyles = `
     html {

@@ -206,6 +206,95 @@ type FontNameType = {
   priority: number;
 };
 
+export interface FontValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export const validateFontFile = (fontData: ArrayBuffer, filename: string): FontValidationResult => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    // Check minimum file size (very small files are likely corrupted)
+    if (fontData.byteLength < 100) {
+      errors.push('Font file is too small and may be corrupted');
+      return { valid: false, errors, warnings };
+    }
+
+    // Check maximum file size (warn about large files)
+    if (fontData.byteLength > 10 * 1024 * 1024) {
+      warnings.push('Font file is large (>10MB) and may impact performance');
+    }
+
+    const dataView = new DataView(fontData);
+    const signature = dataView.getUint32(0, false);
+
+    // Validate font signature
+    const validSignatures = [0x00010000, 0x74727565, 0x4f54544f, 0x774f4646, 0x774f4632];
+    if (!validSignatures.includes(signature)) {
+      errors.push('Invalid font file signature - file may be corrupted or not a valid font');
+      return { valid: false, errors, warnings };
+    }
+
+    const numTables = dataView.getUint16(4, false);
+
+    // Check for reasonable number of tables
+    if (numTables === 0 || numTables > 100) {
+      errors.push('Invalid number of font tables');
+      return { valid: false, errors, warnings };
+    }
+
+    // Check for required tables
+    let hasNameTable = false;
+    let hasOS2Table = false;
+    let hasCmapTable = false;
+
+    for (let i = 0; i < numTables; i++) {
+      const tableOffset = 12 + i * 16;
+      const tag = String.fromCharCode(
+        dataView.getUint8(tableOffset),
+        dataView.getUint8(tableOffset + 1),
+        dataView.getUint8(tableOffset + 2),
+        dataView.getUint8(tableOffset + 3),
+      );
+
+      if (tag === 'name') hasNameTable = true;
+      if (tag === 'OS/2') hasOS2Table = true;
+      if (tag === 'cmap') hasCmapTable = true;
+    }
+
+    if (!hasNameTable) {
+      errors.push('Missing required "name" table');
+    }
+
+    if (!hasOS2Table) {
+      warnings.push('Missing "OS/2" table - weight and style information may be unavailable');
+    }
+
+    if (!hasCmapTable) {
+      errors.push('Missing required "cmap" table - font cannot be rendered');
+    }
+
+    // Try to parse basic font info to ensure it's readable
+    try {
+      parseFontInfo(fontData, filename);
+    } catch (error) {
+      errors.push(`Failed to parse font metadata: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  } catch (error) {
+    errors.push(`Font validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return { valid: false, errors, warnings };
+  }
+};
+
 export const parseFontInfo = (fontData: ArrayBuffer, filename: string) => {
   const fallbackName = filename.replace(/\.[^/.]+$/, '');
   try {
