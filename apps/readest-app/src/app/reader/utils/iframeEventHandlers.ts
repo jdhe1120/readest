@@ -80,6 +80,8 @@ export const handleWheel = (bookKey: string, event: WheelEvent) => {
       clientY: event.clientY,
       offsetX: event.offsetX,
       offsetY: event.offsetY,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
     },
     '*',
   );
@@ -167,15 +169,18 @@ export const handleClick = (
 };
 
 const handleTouchEv = (bookKey: string, event: TouchEvent, type: string) => {
-  const touch = event.targetTouches[0];
   const touches = [];
-  if (touch) {
-    touches.push({
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      screenX: touch.screenX,
-      screenY: touch.screenY,
-    });
+  // Track all touch points for multi-touch gestures (e.g., pinch-to-zoom)
+  for (let i = 0; i < event.targetTouches.length; i++) {
+    const touch = event.targetTouches[i];
+    if (touch) {
+      touches.push({
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        screenX: touch.screenX,
+        screenY: touch.screenY,
+      });
+    }
   }
   window.postMessage(
     {
