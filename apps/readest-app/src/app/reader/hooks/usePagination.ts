@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useEnv } from '@/context/EnvContext';
 import { FoliateView } from '@/types/view';
 import { ViewSettings } from '@/types/book';
@@ -71,6 +71,7 @@ export const usePagination = (
   const { getViewSettings, getViewState } = useReaderStore();
   const { hoveredBookKey, setHoveredBookKey } = useReaderStore();
   const { acquireVolumeKeyInterception, releaseVolumeKeyInterception } = useDeviceControlStore();
+  const lastClickTimeRef = useRef<number>(0);
 
   const handlePageFlip = async (
     msg: MessageEvent | CustomEvent | React.MouseEvent<HTMLDivElement, MouseEvent>,
@@ -106,20 +107,31 @@ export const usePagination = (
             const viewCenterX = viewStartX + viewRect.width / 2;
             const consumed = eventDispatcher.dispatchSync('iframe-single-click');
             if (!consumed) {
+              const now = Date.now();
+              const timeSinceLastClick = now - lastClickTimeRef.current;
               const centerStartX = viewStartX + viewRect.width * 0.375;
               const centerEndX = viewStartX + viewRect.width * 0.625;
+
+              // Get configurable debounce time from settings (default: 300ms)
+              const clickDebounceMs = viewSettings.clickDebounceMs ?? 300;
+
+              // Debounce clicks to prevent accidental menu toggle when scrolling quickly
+              // This helps avoid the menu popping up after a scroll gesture ends with a tap
+              const isDebounced = timeSinceLastClick < clickDebounceMs;
+
               if (
-                viewSettings.disableClick! ||
-                (screenX >= centerStartX && screenX <= centerEndX)
+                (viewSettings.disableClick! ||
+                  (screenX >= centerStartX && screenX <= centerEndX)) &&
+                !isDebounced
               ) {
                 // toggle visibility of the header bar and the footer bar
                 setHoveredBookKey(hoveredBookKey ? null : bookKey);
               } else {
-                if (hoveredBookKey) {
+                if (hoveredBookKey && !isDebounced) {
                   setHoveredBookKey(null);
                   return;
                 }
-                if (!viewSettings.disableClick! && screenX >= viewCenterX) {
+                if (!viewSettings.disableClick! && screenX >= viewCenterX && !isDebounced) {
                   if (viewSettings.fullscreenClickArea) {
                     viewPagination(viewRef.current, viewSettings, 'down');
                   } else if (viewSettings.swapClickArea) {
@@ -127,7 +139,7 @@ export const usePagination = (
                   } else {
                     viewPagination(viewRef.current, viewSettings, 'right');
                   }
-                } else if (!viewSettings.disableClick! && screenX < viewCenterX) {
+                } else if (!viewSettings.disableClick! && screenX < viewCenterX && !isDebounced) {
                   if (viewSettings.fullscreenClickArea) {
                     viewPagination(viewRef.current, viewSettings, 'down');
                   } else if (viewSettings.swapClickArea) {
@@ -137,6 +149,8 @@ export const usePagination = (
                   }
                 }
               }
+
+              lastClickTimeRef.current = now;
             }
           }
         } else if (
