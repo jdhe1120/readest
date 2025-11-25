@@ -30,7 +30,7 @@ import {
   keepTextAlignment,
   transformStylesheet,
 } from '@/utils/style';
-import { mountAdditionalFonts, mountCustomFont } from '@/styles/fonts';
+import { mountAdditionalFonts, mountCustomFont, mountCustomFonts } from '@/styles/fonts';
 import { getBookDirFromLanguage, getBookDirFromWritingMode } from '@/utils/book';
 import { useUICSS } from '@/hooks/useUICSS';
 import {
@@ -182,9 +182,8 @@ const FoliateViewer: React.FC<{
 
       mountAdditionalFonts(detail.doc, isCJKLang(bookData.book?.primaryLanguage));
 
-      getLoadedFonts().forEach((font) => {
-        mountCustomFont(detail.doc, font);
-      });
+      // Mount custom fonts using the improved consolidated mounting function
+      mountCustomFonts(detail.doc, getLoadedFonts());
 
       if (bookDoc.rendition?.layout === 'pre-paginated') {
         applyFixedlayoutStyles(detail.doc, viewSettings);
@@ -420,16 +419,19 @@ const FoliateViewer: React.FC<{
   }, [themeCode, isDarkMode, viewSettings?.overrideColor, viewSettings?.invertImgColorInDark]);
 
   useEffect(() => {
-    const mountCustomFonts = async () => {
+    const mountFonts = async () => {
       await loadCustomFonts(envConfig);
-      getLoadedFonts().forEach((font) => {
-        mountCustomFont(document, font);
-        const docs = viewRef.current?.renderer.getContents();
-        docs?.forEach(({ doc }) => mountCustomFont(doc, font));
-      });
+      const loadedFonts = getLoadedFonts();
+
+      // Mount fonts in main document
+      mountCustomFonts(document, loadedFonts);
+
+      // Mount fonts in iframe documents
+      const docs = viewRef.current?.renderer.getContents();
+      docs?.forEach(({ doc }) => mountCustomFonts(doc, loadedFonts));
     };
     if (settings.customFonts) {
-      mountCustomFonts();
+      mountFonts();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.customFonts, envConfig]);

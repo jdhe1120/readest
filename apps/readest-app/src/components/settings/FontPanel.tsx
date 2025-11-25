@@ -32,6 +32,7 @@ import { SettingsPanelPanelProp } from './SettingsDialog';
 import NumberInput from './NumberInput';
 import FontDropdown from './FontDropDown';
 import CustomFonts from './CustomFonts';
+import FontPresets from './FontPresets';
 
 const genCJKFontsList = (sysFonts: string[]) => {
   return Array.from(new Set([...sysFonts, ...CJK_SERIF_FONTS, ...CJK_SANS_SERIF_FONTS]))
@@ -370,6 +371,15 @@ const FontPanel: React.FC<SettingsPanelPanelProp> = ({ bookKey, onRegisterReset 
             )}
           </div>
         </div>
+      </div>
+
+      <div className='w-full'>
+        <FontPresets
+          bookKey={bookKey}
+          currentSerifFont={serifFont}
+          currentSansSerifFont={sansSerifFont}
+          currentMonospaceFont={monospaceFont}
+        />
       </div>
 
       <div className='w-full'>

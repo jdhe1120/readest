@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import React, { useState } from 'react';
-import { MdAdd, MdDelete } from 'react-icons/md';
+import { MdAdd, MdDelete, MdVisibility } from 'react-icons/md';
 import { IoMdCloseCircleOutline } from 'react-icons/io';
 import { useEnv } from '@/context/EnvContext';
 import { useReaderStore } from '@/store/readerStore';
@@ -10,6 +10,7 @@ import { useCustomFontStore } from '@/store/customFontStore';
 import { useFileSelector } from '@/hooks/useFileSelector';
 import { saveViewSettings } from '@/helpers/settings';
 import { CustomFont, mountCustomFont } from '@/styles/fonts';
+import FontPreview from './FontPreview';
 
 interface CustomFontsProps {
   bookKey: string;
@@ -36,6 +37,7 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
   const { getViewSettings } = useReaderStore();
   const viewSettings = getViewSettings(bookKey) || settings.globalViewSettings;
   const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [previewFont, setPreviewFont] = useState<CustomFont | null>(null);
 
   const { selectFiles } = useFileSelector(appService, _);
 
@@ -118,8 +120,34 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
 
   const availableFamilies = getAvailableFamilies(availableFonts);
 
+  const getFontVariantInfo = (fonts: CustomFont[]): string => {
+    const weights = new Set(fonts.map(f => f.weight || 400));
+    const styles = new Set(fonts.map(f => f.style || 'normal'));
+    const hasVariable = fonts.some(f => f.variable);
+
+    if (hasVariable) return 'Variable';
+
+    const parts: string[] = [];
+    if (weights.size > 1) parts.push(`${weights.size} weights`);
+    if (styles.has('italic') || styles.has('oblique')) parts.push('Italic');
+
+    return parts.length > 0 ? parts.join(', ') : `${fonts[0]?.weight || 400}`;
+  };
+
+  const handlePreviewFamily = (family: FontFamily, e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Preview the regular weight (400) or the first font in the family
+    const regularFont = family.fonts.find(f => f.weight === 400) || family.fonts[0];
+    if (regularFont) {
+      setPreviewFont(regularFont);
+    }
+  };
+
   return (
     <div className='w-full'>
+      {previewFont && (
+        <FontPreview font={previewFont} onClose={() => setPreviewFont(null)} />
+      )}
       <div className='mb-6 flex h-8 items-center justify-between'>
         <div className='breadcrumbs py-1'>
           <ul>
@@ -150,7 +178,7 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
       </div>
 
       <div className='grid grid-cols-2 gap-4'>
-        <div className='card border-primary/50 hover:border-primary/75 group h-12 border-2 transition-colors'>
+        <div className='card border-primary/50 hover:border-primary/75 group h-16 border-2 transition-colors'>
           <button
             className='card-body flex cursor-pointer items-center justify-center p-2 text-center'
             onClick={handleImportFont}
@@ -171,23 +199,37 @@ const CustomFonts: React.FC<CustomFontsProps> = ({ bookKey, onBack }) => {
             role='none'
             key={family.name}
             className={clsx(
-              'card h-12 border shadow-sm',
+              'card group relative border shadow-sm transition-all',
               currentFontFamily === family.name
                 ? 'border-primary/50 bg-primary/50'
-                : `border-base-200 bg-base-200 ${isDeleteMode ? '' : 'cursor-pointer'}`,
+                : `border-base-200 bg-base-200 ${isDeleteMode ? '' : 'cursor-pointer hover:border-primary/30'}`,
             )}
             onClick={!isDeleteMode ? () => handleSelectFamily(family) : undefined}
             title={family.fonts.map((f) => f.name).join('\n')}
           >
-            <div className='card-body flex items-center justify-center p-2'>
+            <div className='card-body flex flex-col items-start justify-center gap-1 p-3'>
               <div
                 style={{
                   fontFamily: `"${family.name}", sans-serif`,
                   fontWeight: 400,
                 }}
-                className='text-base-content line-clamp-1 break-all'
+                className='text-base-content line-clamp-1 w-full break-all font-medium'
               >
                 {family.name}
+              </div>
+              <div className='flex w-full items-center justify-between gap-2'>
+                <span className='text-base-content/60 line-clamp-1 text-xs'>
+                  {getFontVariantInfo(family.fonts)}
+                </span>
+                {!isDeleteMode && (
+                  <button
+                    onClick={(e) => handlePreviewFamily(family, e)}
+                    className='btn btn-ghost btn-xs opacity-0 transition-opacity group-hover:opacity-100'
+                    title={_('Preview Font')}
+                  >
+                    <MdVisibility className='h-4 w-4' />
+                  </button>
+                )}
               </div>
               {isDeleteMode && (
                 <button

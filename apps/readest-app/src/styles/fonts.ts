@@ -191,11 +191,13 @@ export function createFontCSS(font: CustomFont): string {
     throw new Error(`Blob URL not available for font: ${font.name}`);
   }
 
+  // For variable fonts, use font-weight and font-style ranges
+  // For static fonts, always specify exact weight and style to ensure proper matching
   const css = `
     @font-face {
       font-family: "${fontFamily}";
-      ${variable ? '' : `font-style: ${fontStyle};`}
-      ${variable ? '' : `font-weight: ${fontWeight};`}
+      font-style: ${variable ? 'normal' : fontStyle};
+      font-weight: ${variable ? '100 900' : fontWeight};
       src: url("${font.blobUrl}") format("${cssFormat}");
       font-display: swap;
     }
@@ -229,4 +231,34 @@ export const mountCustomFont = (document: Document, font: CustomFont) => {
   if (!styleElement.parentNode) {
     document.head.appendChild(styleElement);
   }
+};
+
+export const mountCustomFonts = (document: Document, fonts: CustomFont[]) => {
+  // Group fonts by family for consolidated mounting
+  const fontsByFamily = new Map<string, CustomFont[]>();
+
+  fonts.forEach((font) => {
+    if (!font.blobUrl || font.error) return;
+
+    const family = createFontFamily(font.family || font.name);
+    if (!fontsByFamily.has(family)) {
+      fontsByFamily.set(family, []);
+    }
+    fontsByFamily.get(family)!.push(font);
+  });
+
+  // Mount each family with all its variants
+  fontsByFamily.forEach((familyFonts, family) => {
+    const familyStyleId = `custom-font-family-${md5Fingerprint(family)}`;
+    const styleElement = document.getElementById(familyStyleId) || document.createElement('style');
+    styleElement.id = familyStyleId;
+
+    // Consolidate all @font-face rules for this family
+    const cssRules = familyFonts.map(font => createFontCSS(font)).join('\n');
+    styleElement.textContent = cssRules;
+
+    if (!styleElement.parentNode) {
+      document.head.appendChild(styleElement);
+    }
+  });
 };
