@@ -11,7 +11,7 @@ import Slider from '@/components/Slider';
 const FONT_SIZE_LIMITS = {
   MIN: 8,
   MAX: 30,
-  DEFAULT: 16,
+  DEFAULT: 17,
 } as const;
 
 const LINE_HEIGHT_LIMITS = {
